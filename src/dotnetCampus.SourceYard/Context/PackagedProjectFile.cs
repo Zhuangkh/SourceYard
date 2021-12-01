@@ -11,11 +11,18 @@ namespace dotnetCampus.SourceYard.Context
     /// </summary>
     class PackagedProjectFile
     {
-        /// <inheritdoc />
-        public PackagedProjectFile(string compileFile, string resourceFile, string contentFile, string page,
-            string applicationDefinition, string noneFile, string embeddedResource, string projectFolder,
+        public PackagedProjectFile(DirectoryInfo commonSourcePackingFolder, string projectFolder,
             BuildProps buildProps)
         {
+            // 通过 commonSourcePackingFolder 可以拿到对应的输出文件路径
+            string compileFile = GetFile("CompileFile.txt");
+            string resourceFile = GetFile("ResourceFile.txt");
+            string contentFile = GetFile("ContentFile.txt");
+            string page = GetFile("PageFile.txt");
+            string applicationDefinition = GetFile("ApplicationDefinitionFile.txt");
+            string noneFile = GetFile("NoneFile.txt");
+            string embeddedResource = GetFile("EmbeddedResourceFile.txt");
+
             _projectFolder = projectFolder;
             _buildProps = buildProps;
             ApplicationDefinition = applicationDefinition;
@@ -26,6 +33,11 @@ namespace dotnetCampus.SourceYard.Context
             PageList = GetFileList(page);
             NoneFileList = GetSourceYardPackageFileList(noneFile, SourceYardNonePackageFile);
             EmbeddedResourceList = GetSourceYardPackageFileList(embeddedResource, SourceYardEmbeddedResourcePackageFile);
+
+            string GetFile(string fileName)
+            {
+                return Path.Combine(commonSourcePackingFolder.FullName, fileName);
+            }
         }
 
         private const string
@@ -77,7 +89,7 @@ namespace dotnetCampus.SourceYard.Context
         private List<SourceYardPackageFile> GetSourceYardPackageFileList(string file,
             string sourceYardPackageFile)
         {
-            sourceYardPackageFile = Path.Combine(_buildProps.PackingDirectory, sourceYardPackageFile);
+            sourceYardPackageFile = Path.Combine(_buildProps.SourcePackingDirectory, sourceYardPackageFile);
             var sourceYardPackageFileList = ParseSourceYardPackageFile(sourceYardPackageFile);
 
             var fileList = GetFileList(file);
@@ -156,9 +168,8 @@ namespace dotnetCampus.SourceYard.Context
                 IgnoreFileEndList.Any(t => temp.EndsWith(t, StringComparison.OrdinalIgnoreCase)));
 
             // 忽略被排除的文件
-            // TODO::是否也移到TFM无关的路径
             fileList.RemoveAll(temp =>
-                _buildProps.SourceYardExcludeFileItemList[_buildProps.TargetFrameworks.First()].Contains(temp, StringComparer.OrdinalIgnoreCase));
+                _buildProps.SourceYardExcludeFileItemList.Contains(temp, StringComparer.OrdinalIgnoreCase));
 
             return fileList;
         }
@@ -183,7 +194,7 @@ namespace dotnetCampus.SourceYard.Context
         /// </summary>
         private static IList<string> IgnoreFileEndList { get; } = new List<string>()
         {
-            ".csproj.DotSettings", ".suo", ".user", ".sln.docstates", 
+            ".csproj.DotSettings", ".suo", ".user", ".sln.docstates",
             ".nupkg",
             // 忽略原因请看 https://github.com/dotnet-campus/SourceYard/issues/98
             "launchSettings.json"

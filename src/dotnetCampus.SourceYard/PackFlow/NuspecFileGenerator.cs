@@ -1,11 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
+﻿using System.IO;
 using System.Xml.Serialization;
 using dotnetCampus.SourceYard.Context;
-using dotnetCampus.SourceYard.PackFlow.Nuspec;
+using dotnetCampus.SourceYard.PackFlow.NuspecFiles;
+using dotnetCampus.SourceYard.PackFlow.NuspecFiles.NuspecContexts;
 
 namespace dotnetCampus.SourceYard.PackFlow
 {
@@ -86,144 +83,11 @@ namespace dotnetCampus.SourceYard.PackFlow
                     PackageLicenseUrl = buildProps.PackageLicenseUrl,
                     PackageTags = buildProps.PackageTags,
                     PackageReleaseNotes = buildProps.PackageReleaseNotes,
-                    Dependencies = GetDependencies(buildProps.TargetFrameworks, buildProps.PackageReferenceVersionList, buildProps.SourceYardPackageReferenceList, buildProps.SourceYardExcludePackageReferenceList),
-                    FrameworkAssemblies = GetFrameworkAssemblies(buildProps.FrameworkReferenceVersionList),
+                    Dependencies = DependenciesParser.GetDependencies(context),
+                    FrameworkAssemblies = DependenciesParser.GetFrameworkAssemblies(context),
                     Repository = repository
                 }
             };
         }
-
-        private List<NuspecFrameworkAssembly> GetFrameworkAssemblies(Dictionary<string, List<string>> frameworkReferenceList)
-        {
-            var assemblies = new List<NuspecFrameworkAssembly>();
-            foreach (var item in frameworkReferenceList)
-            {
-                foreach (var assembly in item.Value)
-                {
-                    assemblies.Add(new NuspecFrameworkAssembly()
-                    {
-                        TargetFramework = item.Key,
-                        AssemblyName = assembly
-                    });
-                }
-            }
-
-            return assemblies;
-        }
-
-        private List<NuspecGroup> GetDependencies(List<string> targetFrameworks,
-            Dictionary<string, List<string>> packageReferenceList,
-            Dictionary<string, List<string>> sourceYardPackageReferenceList,
-            Dictionary<string, List<string>> excludePackageReferenceList)
-        {
-            var groups = new List<NuspecGroup>();
-            var packageVersionRegex = new Regex(@"Name='(\S+)' Version='([\S|\-]+)' PrivateAssets='(\S*)'");
-
-            foreach (var targetFramework in targetFrameworks)
-            {
-                var group = new NuspecGroup() { TargetFramework = targetFramework };
-                var nuspecDependencyList = new List<NuspecDependency>();
-                foreach (var line in packageReferenceList[targetFramework])
-                {
-                    var match = packageVersionRegex.Match(line);
-                    if (match.Success)
-                    {
-                        var name = match.Groups[1].Value;
-                        var version = match.Groups[2].Value;
-                        var privateAssets = match.Groups[3].Value;
-
-                        // 在源代码包如果项目引用的是 private asset 的库，那么就不应该添加引用
-                        // 因为源代码是没有框架的依赖，对 sdk 带的库也不添加
-
-                        var isPrivateAssetsAll = privateAssets.IndexOf("all", StringComparison.OrdinalIgnoreCase) >= 0;
-                        // net45 没有下面方法
-                        //var isPrivateAssetsAll = privateAssets.Contains("all", comparer);
-
-                        // 解决 https://github.com/dotnet-campus/SourceYard/issues/60
-                        // 即使有某个包标记了使用 private asset 是 All 的，但是这个包是一个源代码包，那么打包的时候就需要添加他的引用依赖
-                        var includeInSourceYardPackageReference =
-                            sourceYardPackageReferenceList[targetFramework].Any(temp =>
-                                temp.Equals(name, StringComparison.OrdinalIgnoreCase));
-
-                        if ((!isPrivateAssetsAll || includeInSourceYardPackageReference)
-                            && !SDKNuget.Contains(name))
-                        {
-                            nuspecDependencyList.Add(new NuspecDependency()
-                            {
-                                Id = name,
-                                Version = version
-                            });
-                        }
-                    }
-                }
-                if (excludePackageReferenceList.Any())
-                {
-                    var excludeList = new HashSet<string>(excludePackageReferenceList[targetFramework]);
-                    nuspecDependencyList.RemoveAll(temp => excludeList.Contains(temp.Id));
-                }
-
-                group.Dependencies = nuspecDependencyList;
-                groups.Add(group);
-            }
-
-            return groups;
-        }
-
-        private List<NuspecDependency> ParserPackageVersion(string packageVersionFile,
-            List<string> sourceYardPackageReferenceList)
-        {
-            var nuspecDependencyList = new List<NuspecDependency>();
-            var packageVersionRegex = new Regex(@"Name='(\S+)' Version='([\S|\-]+)' PrivateAssets='(\S*)'");
-            using (var stream = File.OpenText(packageVersionFile))
-            {
-                string? line;
-                while ((line = stream.ReadLine()) != null)
-                {
-                    var match = packageVersionRegex.Match(line);
-                    if (match.Success)
-                    {
-                        var name = match.Groups[1].Value;
-                        var version = match.Groups[2].Value;
-                        var privateAssets = match.Groups[3].Value;
-
-                        // 在源代码包如果项目引用的是 private asset 的库，那么就不应该添加引用
-                        // 因为源代码是没有框架的依赖，对 sdk 带的库也不添加
-
-                        var isPrivateAssetsAll = privateAssets.IndexOf("all", StringComparison.OrdinalIgnoreCase) >= 0;
-                        // net45 没有下面方法
-                        //var isPrivateAssetsAll = privateAssets.Contains("all", comparer);
-
-                        // 解决 https://github.com/dotnet-campus/SourceYard/issues/60
-                        // 即使有某个包标记了使用 private asset 是 All 的，但是这个包是一个源代码包，那么打包的时候就需要添加他的引用依赖
-                        var includeInSourceYardPackageReference = sourceYardPackageReferenceList.Any(temp => temp.Equals(name, StringComparison.OrdinalIgnoreCase));
-
-                        if ((!isPrivateAssetsAll || includeInSourceYardPackageReference)
-                            && !SDKNuget.Contains(name))
-                        {
-                            nuspecDependencyList.Add(new NuspecDependency()
-                            {
-                                Id = name,
-                                Version = version
-                            });
-                        }
-                    }
-                    else
-                    {
-                        _log.Warning($"项目所引用的 NuGet 包包含有无法识别的格式，包信息：{line}");
-                    }
-                }
-            }
-
-            return nuspecDependencyList;
-        }
-
-        /// <summary>
-        /// 包含在 sdk 的库，这些库不应该加入引用
-        /// </summary>
-        private string[] SDKNuget { get; } = new[]
-        {
-            "Microsoft.NETCore.App",
-            "Microsoft.NETCore.Platforms"
-        };
     }
 }
