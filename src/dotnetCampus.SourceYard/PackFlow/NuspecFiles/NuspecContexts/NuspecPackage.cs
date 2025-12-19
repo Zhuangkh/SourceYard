@@ -2,7 +2,7 @@
 
 namespace dotnetCampus.SourceYard.PackFlow.NuspecFiles.NuspecContexts
 {
-    [XmlType("package")]
+    [XmlRoot("package", Namespace = "http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd")]
     public class NuspecPackage
     {
         [XmlElement("metadata")]
